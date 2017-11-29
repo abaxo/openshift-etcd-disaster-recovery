@@ -1,0 +1,81 @@
+---
+- set_fact:
+    alive_nodes: "{{ hostvars[groups['etcd-sec'][0]].etcd_healthy_nodes.stdout | int }}"
+- debug:
+    var: alive_nodes
+
+# Minory dead
+- name: If minority died, just restart them
+  service:
+    name: 'etcd_container'
+    state: started
+    enabled: True
+  become: True
+  when: alive_nodes == '2'
+
+# Majority dead
+- name: Ensure we have the configuration folder
+  file:
+    name: '/etc/systemd/system/etcd_container.service.d'
+    state: directory
+  become: True
+  when: alive_nodes == '1'
+
+- name: If we don't have the quorum put the cluster in surviving mode
+  copy:
+    src: ../files/etcd_rejoining_mode
+    dest: '/etc/systemd/system/etcd_container.service.d/override.conf'
+  become: True
+  when: alive_nodes == '1'
+
+- name: Add the node to the cluster
+  shell: "etcdctl -C https://{{ hostvars[groups['etcd-sec'][0]].ansible_default_ipv4.address }}:2379 --cert-file /etc/etcd/peer.crt --key-file /etc/etcd/peer.key --ca-file /etc/etcd/ca.crt member add {{ inventory_hostname }} https://{{ ansible_default_ipv4.address }}:2380 2>/dev/null | grep '^ETCD' | tr -d '\"'"
+  register: host_addition
+  delegate_to: "{{ groups['etcd-sec'][0] }}"
+  when: alive_nodes == '1'
+
+- debug:
+    var: host_addition
+  when: alive_nodes == '1'
+
+- name: Place the etcd-recovery file
+  template:
+    src: ../templates/etcd-recovery
+    dest: /etc/sysconfig/etcd-recovery
+  become: True
+  when: alive_nodes == '1'
+
+- name: Start the etcd service to join the new cluster
+  systemd:
+    name: 'etcd_container'
+    state: restarted
+    enabled: True
+    daemon_reload: True
+  become: True
+  register: task_result
+  when: alive_nodes == '1'
+
+- name: Wait 5 seconds for sync between etcd servers
+  pause:
+    seconds: 5
+  when: task_result | changed
+
+- name: Remove the config file 
+  file:
+    name: '/etc/systemd/system/etcd_container.service.d/override.conf'
+    state: absent
+  register: task_result
+  when: alive_nodes == '1'
+  become: True
+
+- name: Reload systemd daemons
+  shell: 'systemctl daemon-reload'
+  when: task_result | changed
+  become: True
+
+- name: Remove the etcd-recovery file
+  file:
+    name: '/etc/sysconfig/etcd-recovery'
+    state: absent
+  become: True
+  when: alive_nodes == '1'

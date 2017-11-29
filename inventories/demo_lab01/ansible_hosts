@@ -1,0 +1,12 @@
+[etcd]
+etcd01.example.com
+etcd02.example.com
+etcd03.example.com
+
+[etcd-pri]
+etcd01.example.com
+etcd02.example.com
+
+
+[etcd-sec]
+etcd03.example.com

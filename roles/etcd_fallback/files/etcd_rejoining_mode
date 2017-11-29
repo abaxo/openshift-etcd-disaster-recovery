@@ -1,0 +1,4 @@
+[Service]
+ExecStartPre=/usr/bin/rm -rf /var/lib/etcd/member
+ExecStart=
+ExecStart=/usr/bin/docker run --name etcd_container --rm -v /var/lib/etcd/:/var/lib/etcd/:z -v /etc/etcd:/etc/etcd:ro --env-file=/etc/etcd/etcd.conf --env-file=/etc/sysconfig/etcd-recovery --net=host --entrypoint=/usr/bin/etcd registry.access.redhat.com/rhel7/etcd
